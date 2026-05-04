@@ -81,6 +81,7 @@ class NotionClient:
     def extract_text_from_blocks(self, blocks):
         """Извлечь текст из блоков Notion в формате для публикации."""
         text_parts = []
+        first_paragraph = True
         
         for block in blocks:
             block_type = block["type"]
@@ -88,7 +89,12 @@ class NotionClient:
             if block_type == "paragraph":
                 text = self._extract_rich_text(block["paragraph"]["rich_text"])
                 if text:
-                    text_parts.append(text)
+                    # Первый абзац делаем жирным
+                    if first_paragraph:
+                        text_parts.append(f"*{text}*")
+                        first_paragraph = False
+                    else:
+                        text_parts.append(text)
             
             elif block_type == "heading_1":
                 text = self._extract_rich_text(block["heading_1"]["rich_text"])
