@@ -1,48 +1,93 @@
 """Публикация в Telegram канал."""
 
 import logging
-from telegram import Bot
+import requests
 from config.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID
 
 logger = logging.getLogger(__name__)
 
 class TelegramPublisher:
     def __init__(self):
-        self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        self.bot_token = TELEGRAM_BOT_TOKEN
         self.channel_id = TELEGRAM_CHANNEL_ID
+        self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
     
-    async def publish(self, title, text, images=None):
+    def _send_message(self, chat_id, text, parse_mode="Markdown"):
+        """Отправить текстовое сообщение."""
+        url = f"{self.base_url}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": parse_mode
+        }
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    
+    def _send_photo(self, chat_id, photo_url, caption=None, parse_mode="Markdown"):
+        """Отправить фото с подписью."""
+        url = f"{self.base_url}/sendPhoto"
+        payload = {
+            "chat_id": chat_id,
+            "photo": photo_url,
+            "parse_mode": parse_mode
+        }
+        if caption:
+            payload["caption"] = caption[:1024]  # Лимит caption
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    
+    def _send_media_group(self, chat_id, media):
+        """Отправить альбом фото."""
+        url = f"{self.base_url}/sendMediaGroup"
+        payload = {
+            "chat_id": chat_id,
+            "media": media
+        }
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    
+    def send_error_to_admin(self, title, text_length):
+        """Отправить ошибку админу о длинном тексте."""
+        try:
+            # Отправляем сообщение в канал (или можно в ЛС бота)
+            error_msg = f"⚠️ ОШИБКА: Пост «{title}» слишком длинный ({text_length} символов). Максимум 4096."
+            self._send_message(self.channel_id, error_msg)
+            logger.warning(f"Отправлена ошибка о длинном посте: {title}")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка при отправке уведомления: {e}")
+            return False
+    
+    def publish(self, title, text, images=None):
         """Опубликовать пост в Telegram канал.
         
         Args:
-            title: Заголовок поста
-            text: Текст поста
+            title: Заголовок поста (для логов и ошибок, НЕ публикуется)
+            text: Текст поста (без заголовка)
             images: Список URL картинок (опционально)
         
         Returns:
             bool: Успешность публикации
         """
         try:
-            # Формируем сообщение
-            message = f"*{title}*\n\n{text}" if title else text
+            # Проверяем длину текста
+            if len(text) > 4096:
+                logger.error(f"Текст слишком длинный: {len(text)} символов (макс. 4096)")
+                self.send_error_to_admin(title, len(text))
+                return False
             
             # Отправляем картинки если есть
             if images:
                 if len(images) == 1:
                     # Одна картинка - отправляем с текстом
-                    await self.bot.send_photo(
+                    self._send_photo(
                         chat_id=self.channel_id,
-                        photo=images[0],
-                        caption=message[:1024],  # Лимит caption в Telegram
-                        parse_mode="Markdown"
+                        photo_url=images[0],
+                        caption=text
                     )
-                    # Если текст длинный, отправляем остаток отдельно
-                    if len(message) > 1024:
-                        await self.bot.send_message(
-                            chat_id=self.channel_id,
-                            text=message[1024:4096],  # Лимит сообщения
-                            parse_mode="Markdown"
-                        )
                 else:
                     # Несколько картинок - отправляем альбом
                     media = []
@@ -51,38 +96,33 @@ class TelegramPublisher:
                             media.append({
                                 "type": "photo",
                                 "media": img,
-                                "caption": message[:1024] if len(message) <= 1024 else title[:1024],
+                                "caption": text[:1024] if len(text) <= 1024 else "",
                                 "parse_mode": "Markdown"
                             })
                         else:
                             media.append({"type": "photo", "media": img})
                     
-                    await self.bot.send_media_group(
+                    self._send_media_group(
                         chat_id=self.channel_id,
                         media=media
                     )
                     
-                    # Если текст длинный, отправляем остаток
-                    if len(message) > 1024:
-                        await self.bot.send_message(
+                    # Если текст длинный (но <= 4096), отправляем отдельно
+                    if len(text) > 1024:
+                        self._send_message(
                             chat_id=self.channel_id,
-                            text=message[1024:4096],
-                            parse_mode="Markdown"
+                            text=text
                         )
             else:
                 # Только текст
-                # Разбиваем на части если длиннее 4096 символов
-                parts = [message[i:i+4096] for i in range(0, len(message), 4096)]
-                for part in parts:
-                    await self.bot.send_message(
-                        chat_id=self.channel_id,
-                        text=part,
-                        parse_mode="Markdown"
-                    )
+                self._send_message(
+                    chat_id=self.channel_id,
+                    text=text
+                )
             
-            logger.info(f"Пост опубликован в Telegram: {title}")
+            logger.info(f"✅ Пост опубликован в Telegram: {title}")
             return True
             
         except Exception as e:
-            logger.error(f"Ошибка при публикации в Telegram: {e}")
+            logger.error(f"❌ Ошибка при публикации в Telegram: {e}")
             return False

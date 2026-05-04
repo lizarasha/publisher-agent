@@ -1,9 +1,12 @@
 """Конфигурация проекта."""
 
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # Notion
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
@@ -32,5 +35,11 @@ def check_required_vars():
             f"Отсутствуют обязательные переменные окружения: {', '.join(missing)}\n"
             f"Скопируй .env.example в .env и заполни своими данными."
         )
+    
+    # Проверяем Telegram только если он используется
+    if not TELEGRAM_BOT_TOKEN:
+        logger.warning("TELEGRAM_BOT_TOKEN не задан - публикация в Telegram недоступна")
+    if not TELEGRAM_CHANNEL_ID:
+        logger.warning("TELEGRAM_CHANNEL_ID не задан - публикация в Telegram недоступна")
     
     return True
