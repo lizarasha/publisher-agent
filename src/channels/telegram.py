@@ -49,12 +49,23 @@ class TelegramPublisher:
         response.raise_for_status()
         return response.json()
     
+    def send_notification_to_admin(self, message):
+        """Отправить уведомление админу."""
+        from config.settings import TELEGRAM_ADMIN_ID
+        try:
+            if TELEGRAM_ADMIN_ID:
+                self._send_message(TELEGRAM_ADMIN_ID, message)
+                logger.info(f"Отправлено уведомление админу: {message[:50]}...")
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка при отправке уведомления админу: {e}")
+        return False
+    
     def send_error_to_admin(self, title, text_length):
         """Отправить ошибку админу о длинном тексте."""
         try:
-            # Отправляем сообщение в канал (или можно в ЛС бота)
             error_msg = f"⚠️ ОШИБКА: Пост «{title}» слишком длинный ({text_length} символов). Максимум 4096."
-            self._send_message(self.channel_id, error_msg)
+            self.send_notification_to_admin(error_msg)
             logger.warning(f"Отправлена ошибка о длинном посте: {title}")
             return True
         except Exception as e:

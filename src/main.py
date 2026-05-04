@@ -25,13 +25,26 @@ class PublisherAgent:
         """Обработать и опубликовать посты для Telegram."""
         logger.info("=== Проверка постов для Telegram ===\n")
         
+        stats = {
+            'total_ready': 0,
+            'telegram_posts': 0,
+            'published': 0,
+            'errors': 0,
+            'skipped': 0
+        }
+        
         # 1. Получаем все страницы со статусом "Готово"
         all_ready = self.notion.get_ready_posts()
+        stats['total_ready'] = len(all_ready)
         logger.info(f"Всего страниц со статусом 'Готово': {len(all_ready)}")
         
         if not all_ready:
             logger.info("Нет постов для публикации\n")
-            return
+            self.telegram.send_notification_to_admin(
+                "ℹ️ Проверка завершена\n\n"
+                "Нет постов со статусом 'Готово' для публикации."
+            )
+            return stats
         
         # 2. Фильтруем только те, где Платформа содержит Telegram и Тип = Пост
         telegram_posts = []
@@ -44,9 +57,17 @@ class PublisherAgent:
                 telegram_posts.append(page)
                 logger.info(f"Найден пост для Telegram: {props.get('title', 'Без названия')}")
         
+        stats['telegram_posts'] = len(telegram_posts)
+        
         if not telegram_posts:
             logger.info("Нет постов для Telegram (тип 'Пост')\n")
-            return
+            self.telegram.send_notification_to_admin(
+                f"ℹ️ Проверка завершена\n\n"
+                f"Найдено постов со статусом 'Готово': {stats['total_ready']}\n"
+                f"Из них для Telegram (тип 'Пост'): 0\n\n"
+                f"Нет постов для публикации в Telegram."
+            )
+            return stats
         
         logger.info(f"Постов для публикации в Telegram: {len(telegram_posts)}\n")
         
@@ -74,6 +95,7 @@ class PublisherAgent:
                 if len(text) > 4096:
                     logger.warning(f"  ⚠️ Текст слишком длинный ({len(text)} символов)")
                     self.telegram.send_error_to_admin(title, len(text))
+                    stats['errors'] += 1
                     continue
                 
                 # Публикуем в Telegram
@@ -88,17 +110,54 @@ class PublisherAgent:
                     # Обновляем статус
                     self.notion.update_post_status(page_id, "Опубликовано")
                     logger.info(f"  ✅ Успешно опубликовано\n")
+                    stats['published'] += 1
                 else:
                     logger.error(f"  ❌ Ошибка публикации\n")
+                    stats['errors'] += 1
                 
             except Exception as e:
                 logger.error(f"❌ Ошибка при обработке поста: {e}\n")
+                stats['errors'] += 1
                 continue
+        
+        return stats
     
     def run(self):
         """Запустить агента один раз."""
         logger.info("\n" + "="*60)
         logger.info("🚀 Агент Публикатор запущен")
+        logger.info("="*60 + "\n")
+        
+        try:
+            stats = self.process_telegram_posts()
+            
+            # Отправляем итоговое уведомление
+            if stats:
+                message = (
+                    f"📊 Отчет о работе\n\n"
+                    f"Постов со статусом 'Готово': {stats['total_ready']}\n"
+                    f"Для Telegram (тип 'Пост'): {stats['telegram_posts']}\n"
+                    f"✅ Опубликовано: {stats['published']}\n"
+                    f"❌ Ошибок: {stats['errors']}\n\n"
+                )
+                
+                if stats['published'] > 0:
+                    message += "Работа завершена успешно!"
+                elif stats['telegram_posts'] > 0 and stats['errors'] > 0:
+                    message += "Возникли ошибки при публикации."
+                else:
+                    message += "Нет постов для публикации."
+                
+                self.telegram.send_notification_to_admin(message)
+                
+        except Exception as e:
+            logger.error(f"Ошибка в главном цикле: {e}")
+            self.telegram.send_notification_to_admin(
+                f"❌ Ошибка работы агента:\n\n{e}"
+            )
+        
+        logger.info("\n" + "="*60)
+        logger.info("🏁 Работа завершена")
         logger.info("="*60 + "\n")
         
         try:
