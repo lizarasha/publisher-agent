@@ -1,29 +1,52 @@
 """Клиент для работы с Notion API."""
 
 import logging
-from notion_client import Client
+import requests
 from config.settings import NOTION_TOKEN, NOTION_DATABASE_ID
 
 logger = logging.getLogger(__name__)
 
 class NotionClient:
     def __init__(self):
-        self.client = Client(auth=NOTION_TOKEN)
+        self.token = NOTION_TOKEN
         self.database_id = NOTION_DATABASE_ID
+        self.headers = {
+            'Authorization': f'Bearer {self.token}',
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+        }
+    
+    def _request(self, method, endpoint, data=None):
+        """Выполнить запрос к Notion API."""
+        url = f'https://api.notion.com/v1/{endpoint}'
+        try:
+            if method == 'GET':
+                response = requests.get(url, headers=self.headers, timeout=10)
+            elif method == 'POST':
+                response = requests.post(url, headers=self.headers, json=data, timeout=10)
+            elif method == 'PATCH':
+                response = requests.patch(url, headers=self.headers, json=data, timeout=10)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+            
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API request failed: {e}")
+            raise
     
     def get_ready_posts(self):
-        """Получить посты со статусом 'Готово к публикации'."""
+        """Получить посты со статусом 'Готово'."""
         try:
-            response = self.client.databases.query(
-                database_id=self.database_id,
-                filter={
-                    "property": "Статус",
-                    "select": {
-                        "equals": "Готово к публикации"
+            data = self._request('POST', f'databases/{self.database_id}/query', {
+                'filter': {
+                    'property': 'Статус',
+                    'select': {
+                        'equals': 'Готово'
                     }
                 }
-            )
-            return response["results"]
+            })
+            return data.get('results', [])
         except Exception as e:
             logger.error(f"Ошибка при получении постов из Notion: {e}")
             return []
@@ -31,16 +54,15 @@ class NotionClient:
     def update_post_status(self, page_id, status="Опубликовано"):
         """Обновить статус поста."""
         try:
-            self.client.pages.update(
-                page_id=page_id,
-                properties={
-                    "Статус": {
-                        "select": {
-                            "name": status
+            self._request('PATCH', f'pages/{page_id}', {
+                'properties': {
+                    'Статус': {
+                        'select': {
+                            'name': status
                         }
                     }
                 }
-            )
+            })
             logger.info(f"Статус поста {page_id} обновлен на '{status}'")
             return True
         except Exception as e:
@@ -50,8 +72,8 @@ class NotionClient:
     def get_page_content(self, page_id):
         """Получить контент страницы (блоки)."""
         try:
-            blocks = self.client.blocks.children.list(block_id=page_id)
-            return blocks["results"]
+            data = self._request('GET', f'blocks/{page_id}/children')
+            return data.get('results', [])
         except Exception as e:
             logger.error(f"Ошибка при получении контента страницы: {e}")
             return []
@@ -128,7 +150,9 @@ class NotionClient:
     
     def _extract_rich_text(self, rich_text_array):
         """Извлечь текст из rich_text массива."""
-        return "".join([text["plain_text"] for text in rich_text_array])
+        if not rich_text_array:
+            return ""
+        return "".join([text.get("plain_text", "") for text in rich_text_array])
     
     def get_page_properties(self, page):
         """Получить свойства страницы."""
@@ -139,16 +163,26 @@ class NotionClient:
             "url": page["url"],
         }
         
-        # Название
-        if "Название" in properties:
-            title = properties["Название"]["title"]
-            result["title"] = "".join([t["plain_text"] for t in title]) if title else ""
+        # Название (Name или Название)
+        title = ""
+        if "Name" in properties and properties["Name"]["title"]:
+            title = "".join([t.get("plain_text", "") for t in properties["Name"]["title"]])
+        elif "Название" in properties and properties["Название"]["title"]:
+            title = "".join([t.get("plain_text", "") for t in properties["Название"]["title"]])
+        result["title"] = title
         
-        # Каналы
-        if "Каналы" in properties:
-            multi_select = properties["Каналы"]["multi_select"]
+        # Каналы (Platform в твоей базе)
+        if "Платформа" in properties:
+            multi_select = properties["Платформа"]["multi_select"]
             result["channels"] = [item["name"] for item in multi_select]
         else:
             result["channels"] = []
+        
+        # Тип контента
+        if "Тип контента" in properties:
+            select = properties["Тип контента"]["select"]
+            result["content_type"] = select["name"] if select else ""
+        else:
+            result["content_type"] = ""
         
         return result
