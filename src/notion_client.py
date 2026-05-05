@@ -143,7 +143,12 @@ class NotionClient:
         if platform == 'vk' and len(text_parts) > 1:
             text_parts.insert(1, "")
         
-        return "\n\n".join(text_parts)
+        # Для VK используем одинарные переносы (VK API игнорирует двойные)
+        # Для Telegram используем двойные переносы
+        if platform == 'vk':
+            return "\n".join(text_parts)
+        else:
+            return "\n\n".join(text_parts)
     
     def extract_images(self, blocks):
         """Извлечь URL картинок из блоков."""
