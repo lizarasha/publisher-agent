@@ -78,8 +78,13 @@ class NotionClient:
             logger.error(f"Ошибка при получении контента страницы: {e}")
             return []
     
-    def extract_text_from_blocks(self, blocks):
-        """Извлечь текст из блоков Notion в формате для публикации."""
+    def extract_text_from_blocks(self, blocks, platform='telegram'):
+        """Извлечь текст из блоков Notion в формате для публикации.
+        
+        Args:
+            blocks: Список блоков Notion
+            platform: Платформа ('telegram' или 'vk')
+        """
         text_parts = []
         first_paragraph = True
         
@@ -89,8 +94,8 @@ class NotionClient:
             if block_type == "paragraph":
                 text = self._extract_rich_text(block["paragraph"]["rich_text"])
                 if text:
-                    # Первый абзац делаем жирным
-                    if first_paragraph:
+                    # Первый абзац делаем жирным только для Telegram
+                    if first_paragraph and platform == 'telegram':
                         text_parts.append(f"*{text}*")
                         first_paragraph = False
                     else:

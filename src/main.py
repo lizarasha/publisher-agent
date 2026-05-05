@@ -90,7 +90,7 @@ class PublisherAgent:
                     logger.info(f"Обработка Telegram: {title}")
                     
                     blocks = self.notion.get_page_content(page_id)
-                    text = self.notion.extract_text_from_blocks(blocks)
+                    text = self.notion.extract_text_from_blocks(blocks, platform='telegram')
                     images = self.notion.extract_images(blocks)
                     
                     logger.info(f"  Длина текста: {len(text)} символов")
@@ -129,7 +129,7 @@ class PublisherAgent:
                     logger.info(f"Обработка VK: {title}")
                     
                     blocks = self.notion.get_page_content(page_id)
-                    text = self.notion.extract_text_from_blocks(blocks)
+                    text = self.notion.extract_text_from_blocks(blocks, platform='vk')
                     images = self.notion.extract_images(blocks)
                     
                     logger.info(f"  Длина текста: {len(text)} символов")
