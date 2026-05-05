@@ -139,6 +139,10 @@ class NotionClient:
                 if url:
                     text_parts.append(f"[IMAGE:{url}]")
         
+        # Для VK добавляем отступ после первого абзаца
+        if platform == 'vk' and len(text_parts) > 1:
+            text_parts.insert(1, "")
+        
         return "\n\n".join(text_parts)
     
     def extract_images(self, blocks):
